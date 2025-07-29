@@ -303,7 +303,7 @@ struct PlayerFilter {
 	int skillID;
 	int skillLevel;
 	std::string perkEditorID;
-
+	
 	PlayerFilter() : skillLevel(-1), skillID(-1) {}
 	
 	PlayerFilter(const std::string& filterStr) {
@@ -403,7 +403,7 @@ struct ConfigEntry {
 class ConfigManager : public SINGLETON<ConfigManager> {
 public:
 	static ConfigManager& getInstance() {
-		static ConfigManager instance("Data/SKSE/Plugins/DynamicMerchant.json");
+		static ConfigManager instance("Data/SKSE/StockControl");
 		return instance;
 	}
 
@@ -411,31 +411,32 @@ public:
 	float GetPriceMultiplier(RE::Actor* trader = nullptr, RE::InventoryEntryData* item = nullptr, RE::PlayerCharacter* player = nullptr) {
 		logger::trace("Getting price multiplier for trader: {}, item: {}, player: {}", 
 					(void*)trader, (void*)item, (void*)player);
-		
-		static auto trader_id = trader->formID;
-		static std::unordered_map<RE::FormID, float>cache;
 
-		if (trader_id == trader->formID) {
-			if (cache.contains(item->object->formID)) return cache[item->object->formID];
-		}
-		else {
+		if(trader_id != trader->formID){
 			trader_id = trader->formID;
-			cache.clear();
+			price_cache.clear();
 		}
+
+		float multiplier = 1.0f;
 
 		for (size_t i = 0; i < priceEntries.size(); ++i) {
 			const auto& entry = priceEntries[i];
+			std::pair<int, RE::FormID> rulePair(i, item->object->formID);
+
 			logger::trace("Checking price entry {} of {}", i + 1, priceEntries.size());
 			if (MatchesFilters(entry.filters, trader, item, player)) {
-				float multiplier = entry.value.GetValue();
-				logger::info("Price multiplier {} applied from entry {}", multiplier, i + 1);
-				cache[item->object->formID] = multiplier;
-				return multiplier;
+				float mult = entry.value.GetValue();
+
+				if (price_cache.contains(rulePair)) mult = price_cache[rulePair];
+				else price_cache[rulePair] = mult;
+
+				logger::info("Price multiplier {} applied from entry {}", mult, i + 1);
+				multiplier *= mult;
 			}
 		}
+
 		logger::debug("No price entries matched, returning default multiplier 1.0");
-		cache[item->object->formID] = 1.0f;
-		return 1.0f; // Default multiplier
+		return multiplier; // Default multiplier
 	}
 
 	// Get count multiplier for given conditions
@@ -443,35 +444,26 @@ public:
 		logger::trace("Getting count multiplier for trader: {}, item: {}, player: {}", 
 					(void*)trader, (void*)item, (void*)player);
 		
-		static auto trader_id = trader->formID;
-		static std::unordered_map<RE::FormID, float>cache;
+		float multiplier = 1.0f;
 
-		if (trader_id == trader->formID) {
-			if (cache.contains(item->object->formID)) return cache[item->object->formID];
-		}
-		else {
-			trader_id = trader->formID;
-			cache.clear();
-		}
-		
 		for (size_t i = 0; i < countEntries.size(); ++i) {
 			const auto& entry = countEntries[i];
 			logger::trace("Checking count entry {} of {}", i + 1, countEntries.size());
 			if (MatchesFilters(entry.filters, trader, item, player)) {
-				float multiplier = entry.value.GetValue();
-				logger::info("Count multiplier {} applied from entry {}", multiplier, i + 1);
-				cache[item->object->formID] = multiplier;
-				return multiplier;
+				float mult = entry.value.GetValue();
+				logger::info("Count multiplier {} applied from entry {}", mult, i + 1);
+				multiplier *= mult;
 			}
 		}
 		logger::debug("No count entries matched, returning default multiplier 1.0");
-		cache[item->object->formID] = 1.0f;
-		return 1.0f; // Default multiplier
+		return multiplier; // Default multiplier
 	}
 
 	// Reload configuration from file
 	bool ReloadConfig() {
 		logger::info("Reloading configuration from: {}", configPath);
+		priceEntries.clear();
+		countEntries.clear();
 		return LoadConfig(configPath);
 	}
 
@@ -479,6 +471,8 @@ private:
 	std::string configPath;
 	std::vector<ConfigEntry> priceEntries;
 	std::vector<ConfigEntry> countEntries;
+	RE::FormID trader_id;
+	std::map<std::pair<int, RE::FormID>, float>price_cache;
 
 	ConfigManager(const char* path) : configPath(path) {
 		logger::info("Initializing ConfigManager with path: {}", path);
@@ -486,49 +480,51 @@ private:
 	}
 
 	bool LoadConfig(const std::string& path) {
-		logger::info("Loading configuration from: {}", path);
 		try {
-			std::ifstream file(path);
-			if (!file.is_open()) {
-				logger::error("Failed to open config file: {}", path);
-				return false;
-			}
+			std::filesystem::directory_iterator dir(path);
 
-			nlohmann::json configJson;
-			file >> configJson;
-			logger::debug("Successfully parsed JSON from config file");
+			for (auto&& file_ : dir) {
+				logger::info("Loading configuration from: {}", file_.path().string());
 
-			// Clear existing entries
-			priceEntries.clear();
-			countEntries.clear();
-			logger::debug("Cleared existing configuration entries");
-
-			// Load price entries
-			if (configJson.contains("Prices")) {
-				logger::debug("Loading price entries from config");
-				for (size_t i = 0; i < configJson["Prices"].size(); ++i) {
-					logger::trace("Loading price entry {}", i + 1);
-					priceEntries.emplace_back(configJson["Prices"][i]);
+				std::ifstream file(file_.path());
+				if (!file.is_open()) {
+					logger::error("Failed to open config file: {}", file_.path().string());
+					return false;
 				}
-				logger::info("Loaded {} price entries", priceEntries.size());
-			} else {
-				logger::warn("No 'Prices' section found in config");
-			}
 
-			// Load count entries
-			if (configJson.contains("Counts")) {
-				logger::debug("Loading count entries from config");
-				for (size_t i = 0; i < configJson["Counts"].size(); ++i) {
-					logger::trace("Loading count entry {}", i + 1);
-					countEntries.emplace_back(configJson["Counts"][i]);
+				nlohmann::json configJson;
+				file >> configJson;
+				logger::debug("Successfully parsed JSON from config file");
+
+				// Load price entries
+				if (configJson.contains("Prices")) {
+					logger::debug("Loading price entries from config");
+					for (size_t i = 0; i < configJson["Prices"].size(); ++i) {
+						logger::trace("Loading price entry {}", i + 1);
+						priceEntries.emplace_back(configJson["Prices"][i]);
+					}
+					logger::info("Loaded {} price entries", priceEntries.size());
 				}
-				logger::info("Loaded {} count entries", countEntries.size());
-			} else {
-				logger::warn("No 'Counts' section found in config");
-			}
+				else {
+					logger::warn("No 'Prices' section found in config");
+				}
 
-			logger::info("Configuration loaded successfully - {} price entries and {} count entries", 
-						priceEntries.size(), countEntries.size());
+				// Load count entries
+				if (configJson.contains("Counts")) {
+					logger::debug("Loading count entries from config");
+					for (size_t i = 0; i < configJson["Counts"].size(); ++i) {
+						logger::trace("Loading count entry {}", i + 1);
+						countEntries.emplace_back(configJson["Counts"][i]);
+					}
+					logger::info("Loaded {} count entries", countEntries.size());
+				}
+				else {
+					logger::warn("No 'Counts' section found in config");
+				}
+
+				logger::info("Configuration loaded successfully - {} price entries and {} count entries",
+					priceEntries.size(), countEntries.size());
+			}
 			return true;
 
 		} catch (const std::exception& e) {
@@ -544,18 +540,14 @@ private:
 		// Check item filters (OR condition between filters)
 		if (!filters.itemFilters.empty() && item) {
 			logger::trace("Checking {} item filters", filters.itemFilters.size());
-			bool itemMatches = false;
 			for (size_t i = 0; i < filters.itemFilters.size(); ++i) {
 				const auto& itemFilter = filters.itemFilters[i];
 				logger::trace("Checking item filter {}", i + 1);
 				if (MatchesItemFilter(itemFilter, item)) {
-					itemMatches = true;
 					logger::debug("Item filter {} matched", i + 1);
-					break;
+					continue;
 				}
-			}
-			if (!itemMatches) {
-				logger::debug("No item filters matched, rejecting");
+				logger::debug("Item filter {} didnt match, rejecting", i + 1);
 				return false;
 			}
 		} else if (!filters.itemFilters.empty() && !item) {
@@ -566,18 +558,14 @@ private:
 		// Check merchant filters (OR condition between filters)
 		if (!filters.merchantFilters.empty() && trader) {
 			logger::trace("Checking {} merchant filters", filters.merchantFilters.size());
-			bool merchantMatches = false;
 			for (size_t i = 0; i < filters.merchantFilters.size(); ++i) {
 				const auto& merchantFilter = filters.merchantFilters[i];
 				logger::trace("Checking merchant filter {}", i + 1);
 				if (MatchesMerchantFilter(merchantFilter, trader)) {
-					merchantMatches = true;
 					logger::debug("Merchant filter {} matched", i + 1);
-					break;
+					continue;
 				}
-			}
-			if (!merchantMatches) {
-				logger::debug("No merchant filters matched, rejecting");
+				logger::debug("Merchant filter {} didnt match, rejecting", i + 1);
 				return false;
 			}
 		} else if (!filters.merchantFilters.empty() && !trader) {
@@ -588,18 +576,14 @@ private:
 		// Check player filters (OR condition between filters)
 		if (!filters.playerFilters.empty() && player) {
 			logger::trace("Checking {} player filters", filters.playerFilters.size());
-			bool playerMatches = false;
 			for (size_t i = 0; i < filters.playerFilters.size(); ++i) {
 				const auto& playerFilter = filters.playerFilters[i];
 				logger::trace("Checking player filter {}", i + 1);
 				if (MatchesPlayerFilter(playerFilter, player)) {
-					playerMatches = true;
 					logger::debug("Player filter {} matched", i + 1);
-					break;
+					continue;
 				}
-			}
-			if (!playerMatches) {
-				logger::debug("No player filters matched, rejecting");
+				logger::debug("Player filter {} didnt match, rejecting", i + 1);
 				return false;
 			}
 		} else if (!filters.playerFilters.empty() && !player) {
@@ -654,7 +638,7 @@ private:
 
 		// Check value
 		if (filter.valueFilter.type != ComparisonFilter::NONE) {
-			int value = item->object->GetGoldValue();
+			int value = item->GetValue();
 			logger::trace("Checking item value: {}", value);
 			if (!filter.valueFilter.Matches(static_cast<float>(value))) {
 				logger::trace("Item value filter failed");
@@ -689,20 +673,19 @@ private:
 
 		// Check relationship
 		if (filter.relationship.type != ComparisonFilter::NONE) {
-			auto player = RE::PlayerCharacter::GetSingleton();
-			auto rel = RE::BGSRelationship::GetRelationship(player->GetActorBase(), trader->GetActorBase());
-			if (rel) {
-				int relationshipLevel = static_cast<int>(rel->level.get());
-				logger::trace("Checking merchant relationship level: {}", relationshipLevel);
-				if (!filter.relationship.Matches(relationshipLevel)) {
-					logger::trace("Merchant relationship filter failed");
-					return false;
-				}
-				logger::trace("Merchant relationship filter passed");
-			} else {
-				logger::trace("No relationship found between player and merchant");
+			auto&& player = RE::PlayerCharacter::GetSingleton()->GetActorBase();
+			auto&& npc = trader->GetActorBase();
+
+			static REL::Relocation<int(*)(RE::TESNPC*, RE::TESNPC*)> getidx(RELOCATION_ID(24076, 24076));
+			static REL::Relocation<int*> idxmap(RELOCATION_ID(369311, 369311));
+
+			int relationshipLevel = idxmap.get()[getidx(player, npc)];
+			logger::trace("Checking merchant relationship level: {}", relationshipLevel);
+			if (!filter.relationship.Matches(relationshipLevel)) {
+				logger::trace("Merchant relationship filter failed");
 				return false;
 			}
+			logger::trace("Merchant relationship filter passed");
 		}
 
 		// Check global variable

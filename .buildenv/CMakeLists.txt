@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 3.21)
 
 # [BEGIN set_project_name]
 # Set your project name. This will be the name of your SKSE .dll file.
-project(DynamicMerchant VERSION 0.0.1 LANGUAGES CXX)
+project(ComprehensiveMerchantStockControl VERSION 0.0.1 LANGUAGES CXX)
 
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS ../src/*.cpp ../src/*.h)
 
@@ -37,7 +37,7 @@ if(DEFINED ENV{SKYRIM_MODS_FOLDER} AND IS_DIRECTORY "$ENV{SKYRIM_MODS_FOLDER}")
 endif()
 
 # Otherwise, you can set OUTPUT_FOLDER to any place you'd like :)
-set(OUTPUT_FOLDER "D:/SteamLibrary/steamapps/common/Skyrim Special Edition/MO2/mods/DynamicMerchant")
+set(OUTPUT_FOLDER "D:/SteamLibrary/steamapps/common/Skyrim Special Edition/MO2/mods/ComprehensiveMerchantStockControl")
 
 include($ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake)
 # Setup your SKSE plugin as an SKSE plugin!
