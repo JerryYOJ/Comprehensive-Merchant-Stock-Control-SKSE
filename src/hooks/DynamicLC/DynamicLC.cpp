@@ -26,11 +26,14 @@ void DynamicLC::InitLeveledItems(RE::InventoryChanges* inv)
 	if (inv->owner->Is(RE::FormType::Reference)) id = inv->owner->GetBaseObject()->formID;
 
 	if (std::string(GetFormEditorID(id)).contains("Merchant")) {
-		if (RE::BarterMenu::GetTargetRefHandle()) {
+		static REL::Relocation<RE::RefHandle*> handle{ RELOCATION_ID(519283, 405823) };
+
+		if (*handle) {
 			auto&& cfg = ConfigManager::getInstance();
 			RE::TESObjectREFRPtr trader;
-			if (RE::TESObjectREFR::LookupByHandle(RE::BarterMenu::GetTargetRefHandle(), trader)) {
+			if (RE::TESObjectREFR::LookupByHandle(*handle, trader)) {
 				for (auto&& item : *inv->entryList) {
+					logger::info("Applying count multiplier to {}", item->GetDisplayName());
 					item->countDelta *= cfg.GetCountMultiplier(trader->As<RE::Actor>(), item, RE::PlayerCharacter::GetSingleton());
 				}
 			}
@@ -53,7 +56,13 @@ void DynamicLC::InitLeveledItems(RE::InventoryChanges* inv)
 extern "C" __declspec(dllexport) float MerchantPriceCallback(RE::Actor* trader, RE::InventoryEntryData* objDesc, uint16_t a_level, RE::GFxValue& a_updateObj, bool is_buying) {
 	if (is_buying) {
 		auto&& cfg = ConfigManager::getInstance();
-		return cfg.GetPriceMultiplier(trader, objDesc, RE::PlayerCharacter::GetSingleton());
+		logger::info("Applying buy price multiplier to {}", objDesc->GetDisplayName());
+		return cfg.GetBuyPriceMultiplier(trader, objDesc, RE::PlayerCharacter::GetSingleton());
+	}
+	else {
+		auto&& cfg = ConfigManager::getInstance();
+		logger::info("Applying sell price multiplier to {}", objDesc->GetDisplayName());
+		return cfg.GetSellPriceMultiplier(trader, objDesc, RE::PlayerCharacter::GetSingleton());
 	}
 	
 	return 1.0f;

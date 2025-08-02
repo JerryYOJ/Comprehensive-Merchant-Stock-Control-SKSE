@@ -14,7 +14,6 @@ namespace Hooks {
 
     void InstallLate() {
 
-        
-
+        MH_EnableHook(MH_ALL_HOOKS);
     }
 }

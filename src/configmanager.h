@@ -306,7 +306,7 @@ struct PlayerFilter {
 	
 	PlayerFilter() : skillLevel(-1), skillID(-1) {}
 	
-	PlayerFilter(const std::string& filterStr) {
+	PlayerFilter(const std::string& filterStr) : skillLevel(-1), skillID(-1) {
 		ParseFilter(filterStr);
 	}
 
@@ -382,14 +382,32 @@ struct FilterSet {
 // Structure for configuration entries
 struct ConfigEntry {
 	ValueRange value;
+	int low_cap;
+	int high_cap;
 	FilterSet filters;
 
 	ConfigEntry() = default;
 	
-	ConfigEntry(const nlohmann::json& entryJson) {
+	ConfigEntry(const nlohmann::json& entryJson) : low_cap(0), high_cap(0) {
 		logger::trace("Creating config entry from JSON");
 		if (entryJson.contains("value")) {
-			value.ParseValue(entryJson["value"].get<std::string>());
+			auto&& val = entryJson["value"];
+			if (val.is_array()) {
+				int sz = val.size();
+				switch (sz) {
+				case 3:
+					high_cap = val[2].get<std::string>().empty() ? 0 : std::stoi(val[2].get<std::string>());
+					sz--; //fallthrough
+				case 2:
+					low_cap = val[1].get<std::string>().empty() ? 0 : std::stoi(val[1].get<std::string>());
+					sz--; //fallthrough
+				case 1:
+					value.ParseValue(val[0].get<std::string>());
+				default:
+					break;
+				}
+			}
+			else value.ParseValue(val.get<std::string>());
 		}
 		
 		if (entryJson.contains("filters")) {
@@ -407,35 +425,67 @@ public:
 		return instance;
 	}
 
-	// Get price multiplier for given conditions
-	float GetPriceMultiplier(RE::Actor* trader = nullptr, RE::InventoryEntryData* item = nullptr, RE::PlayerCharacter* player = nullptr) {
-		logger::trace("Getting price multiplier for trader: {}, item: {}, player: {}", 
+	// Get buy price multiplier for given conditions
+	float GetBuyPriceMultiplier(RE::Actor* trader = nullptr, RE::InventoryEntryData* item = nullptr, RE::PlayerCharacter* player = nullptr) {
+		logger::trace("Getting buy price multiplier for trader: {}, item: {}, player: {}", 
 					(void*)trader, (void*)item, (void*)player);
 
 		if(trader_id != trader->formID){
 			trader_id = trader->formID;
-			price_cache.clear();
+			buyPrice_cache.clear();
 		}
 
 		float multiplier = 1.0f;
 
-		for (size_t i = 0; i < priceEntries.size(); ++i) {
-			const auto& entry = priceEntries[i];
+		for (size_t i = 0; i < buyPriceEntries.size(); ++i) {
+			const auto& entry = buyPriceEntries[i];
 			std::pair<int, RE::FormID> rulePair(i, item->object->formID);
 
-			logger::trace("Checking price entry {} of {}", i + 1, priceEntries.size());
+			logger::trace("Checking buy price entry {} of {}", i + 1, buyPriceEntries.size());
 			if (MatchesFilters(entry.filters, trader, item, player)) {
 				float mult = entry.value.GetValue();
 
-				if (price_cache.contains(rulePair)) mult = price_cache[rulePair];
-				else price_cache[rulePair] = mult;
+				if (buyPrice_cache.contains(rulePair)) mult = buyPrice_cache[rulePair];
+				else buyPrice_cache[rulePair] = mult;
 
-				logger::info("Price multiplier {} applied from entry {}", mult, i + 1);
+				logger::info("Buy price multiplier {} applied from entry {}", mult, i + 1);
 				multiplier *= mult;
 			}
 		}
 
-		logger::debug("No price entries matched, returning default multiplier 1.0");
+		logger::debug("No buy price entries matched, returning default multiplier 1.0");
+		return multiplier; // Default multiplier
+	}
+
+	// Get sell price multiplier for given conditions
+	float GetSellPriceMultiplier(RE::Actor* trader = nullptr, RE::InventoryEntryData* item = nullptr, RE::PlayerCharacter* player = nullptr) {
+		logger::trace("Getting sell price multiplier for trader: {}, item: {}, player: {}", 
+					(void*)trader, (void*)item, (void*)player);
+
+		if(trader_id != trader->formID){
+			trader_id = trader->formID;
+			sellPrice_cache.clear();
+		}
+
+		float multiplier = 1.0f;
+
+		for (size_t i = 0; i < sellPriceEntries.size(); ++i) {
+			const auto& entry = sellPriceEntries[i];
+			std::pair<int, RE::FormID> rulePair(i, item->object->formID);
+
+			logger::trace("Checking sell price entry {} of {}", i + 1, sellPriceEntries.size());
+			if (MatchesFilters(entry.filters, trader, item, player)) {
+				float mult = entry.value.GetValue();
+
+				if (sellPrice_cache.contains(rulePair)) mult = sellPrice_cache[rulePair];
+				else sellPrice_cache[rulePair] = mult;
+
+				logger::info("Sell price multiplier {} applied from entry {}", mult, i + 1);
+				multiplier *= mult;
+			}
+		}
+
+		logger::debug("No sell price entries matched, returning default multiplier 1.0");
 		return multiplier; // Default multiplier
 	}
 
@@ -462,17 +512,20 @@ public:
 	// Reload configuration from file
 	bool ReloadConfig() {
 		logger::info("Reloading configuration from: {}", configPath);
-		priceEntries.clear();
+		buyPriceEntries.clear();
+		sellPriceEntries.clear();
 		countEntries.clear();
 		return LoadConfig(configPath);
 	}
 
 private:
 	std::string configPath;
-	std::vector<ConfigEntry> priceEntries;
+	std::vector<ConfigEntry> buyPriceEntries;
+	std::vector<ConfigEntry> sellPriceEntries;
 	std::vector<ConfigEntry> countEntries;
 	RE::FormID trader_id;
-	std::map<std::pair<int, RE::FormID>, float>price_cache;
+	std::map<std::pair<int, RE::FormID>, float> buyPrice_cache;
+	std::map<std::pair<int, RE::FormID>, float> sellPrice_cache;
 
 	ConfigManager(const char* path) : configPath(path) {
 		logger::info("Initializing ConfigManager with path: {}", path);
@@ -496,17 +549,30 @@ private:
 				file >> configJson;
 				logger::debug("Successfully parsed JSON from config file");
 
-				// Load price entries
-				if (configJson.contains("Prices")) {
-					logger::debug("Loading price entries from config");
-					for (size_t i = 0; i < configJson["Prices"].size(); ++i) {
-						logger::trace("Loading price entry {}", i + 1);
-						priceEntries.emplace_back(configJson["Prices"][i]);
+				// Load buy price entries
+				if (configJson.contains("BuyPrices")) {
+					logger::debug("Loading buy price entries from config");
+					for (size_t i = 0; i < configJson["BuyPrices"].size(); ++i) {
+						logger::trace("Loading buy price entry {}", i + 1);
+						buyPriceEntries.emplace_back(configJson["BuyPrices"][i]);
 					}
-					logger::info("Loaded {} price entries", priceEntries.size());
+					logger::info("Loaded {} buy price entries", buyPriceEntries.size());
 				}
 				else {
-					logger::warn("No 'Prices' section found in config");
+					logger::warn("No 'BuyPrices' section found in config");
+				}
+
+				// Load sell price entries
+				if (configJson.contains("SellPrices")) {
+					logger::debug("Loading sell price entries from config");
+					for (size_t i = 0; i < configJson["SellPrices"].size(); ++i) {
+						logger::trace("Loading sell price entry {}", i + 1);
+						sellPriceEntries.emplace_back(configJson["SellPrices"][i]);
+					}
+					logger::info("Loaded {} sell price entries", sellPriceEntries.size());
+				}
+				else {
+					logger::warn("No 'SellPrices' section found in config");
 				}
 
 				// Load count entries
@@ -522,8 +588,8 @@ private:
 					logger::warn("No 'Counts' section found in config");
 				}
 
-				logger::info("Configuration loaded successfully - {} price entries and {} count entries",
-					priceEntries.size(), countEntries.size());
+				logger::info("Configuration loaded successfully - {} buy price entries, {} sell price entries, and {} count entries",
+					buyPriceEntries.size(), sellPriceEntries.size(), countEntries.size());
 			}
 			return true;
 
@@ -663,7 +729,7 @@ private:
 		// Check form editor ID
 		if (!filter.formEditorID.empty()) {
 			auto targetForm = RE::TESForm::LookupByEditorID(filter.formEditorID);
-			if (!targetForm || targetForm->formID != trader->formID) {
+			if (!targetForm || (targetForm->formID != trader->formID && targetForm->formID != trader->GetBaseObject()->formID)) {
 				logger::trace("Merchant form ID mismatch: expected {}, got {}", 
 							targetForm ? targetForm->formID : 0, trader->formID);
 				return false;
