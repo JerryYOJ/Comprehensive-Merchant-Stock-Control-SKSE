@@ -5,11 +5,9 @@
 #include <xbyak.h>
 #include <random>
 
-extern "C" __declspec(dllexport) float MinNumMult = 1, MaxNumMult = 1, MinLevelMult = 1, MaxLevelMult = 1;
-
 void DynamicLC::Install()
 {
-	REL::Relocation<std::uintptr_t> hookPoint{ RELOCATION_ID(16038, 16038), REL::VariantOffset(0x229, 0x229, 0x0) };
+	REL::Relocation<std::uintptr_t> hookPoint{ RELOCATION_ID(15800, 16038), REL::VariantOffset(0xDC, 0x229, 0x0) };
 	
 	_InitLeveledItems = SKSE::GetTrampoline().write_call<5>(hookPoint.address(), InitLeveledItems);
 }

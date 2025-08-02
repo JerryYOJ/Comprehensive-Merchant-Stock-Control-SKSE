@@ -1,17 +1,17 @@
 {
 	"BuyPrices": [
 		{
-			"value": "2.0~2.5", //one val for fixed, ~ for ranged; OR [val1, val2, val3] where val2 and val3 are lowest value cap and highest value cap (and they are integers not floats)
+			"value": "2.0~2.5",                                                     //one val for fixed, ~ for ranged; OR [val1, val2, val3] where val2 and val3 are lowest value cap and highest value cap (and they are integers not floats)
 			"filters": {
 				"item": [ "NONE|VendorItemOreIngot|>=1|>=1" , "NONE|NONE|NONE|NONE"], //form_editorID, keyword_editorID, weight filter(>, <, =, <=, >=number), value filter (...). You can also add multiple conditions in one section
-				"merchant": [ "NONE|>=0|PerkInvestorSolitudeBlacksmith<=100" ], //actor_editorID, relationship filter(...), global condition(some global>, <, =, >=, <=number)
-				"player": [ ">=1|17(15)|NONE" ] //level(...), actorValueID(actorValue) player SPEECH must >= lv15, perk_editorID player must have perk
-			} //For an filter to match, you need to match every condition in one section, and every sections' conditions, to be able to apply
+				"merchant": [ "NONE|>=0|PerkInvestorSolitudeBlacksmith<=100" ],        //actor_editorID, relationship filter(...), global condition(some global>, <, =, >=, <=number)
+				"player": [ ">=1|17(15)|NONE" ]                                        //level(...), actorValueID(actorValue) player SPEECH must >= lv15, perk_editorID player must have perk
+			}                                                                        //For an filter to match, you need to match every condition in one section, and every sections' conditions, to be able to apply
 		}
 	],
 	"SellPrices": [
 		{
-			"value": "0.5~0.8", //Sell prices are typically lower than buy prices
+			"value": "0.9", 
 			"filters": {
 				"item": [ "NONE|VendorItemOreIngot|>=1|>=1" , "NONE|NONE|NONE|NONE"],
 				"merchant": [ "NONE|>=0|PerkInvestorSolitudeBlacksmith<=100" ],

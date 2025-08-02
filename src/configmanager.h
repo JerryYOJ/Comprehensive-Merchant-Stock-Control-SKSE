@@ -440,7 +440,7 @@ public:
 		for (size_t i = 0; i < buyPriceEntries.size(); ++i) {
 			const auto& entry = buyPriceEntries[i];
 			std::pair<int, RE::FormID> rulePair(i, item->object->formID);
-
+			
 			logger::trace("Checking buy price entry {} of {}", i + 1, buyPriceEntries.size());
 			if (MatchesFilters(entry.filters, trader, item, player)) {
 				float mult = entry.value.GetValue();
