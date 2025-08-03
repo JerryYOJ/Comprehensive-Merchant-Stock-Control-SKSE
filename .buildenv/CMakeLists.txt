@@ -37,7 +37,7 @@ if(DEFINED ENV{SKYRIM_MODS_FOLDER} AND IS_DIRECTORY "$ENV{SKYRIM_MODS_FOLDER}")
 endif()
 
 # Otherwise, you can set OUTPUT_FOLDER to any place you'd like :)
-#set(OUTPUT_FOLDER "D:/SteamLibrary/steamapps/common/Skyrim Special Edition/MO2/mods/ComprehensiveMerchantStockControl")
+set(OUTPUT_FOLDER "D:/SteamLibrary/steamapps/common/Skyrim Special Edition/MO2/mods/ComprehensiveMerchantStockControl")
 
 include($ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake)
 # Setup your SKSE plugin as an SKSE plugin!
